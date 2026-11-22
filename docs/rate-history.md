@@ -1,109 +1,63 @@
 # Rate history
 
-Where do the prices the corridor engine uses come from, and how fresh are
-they? This page documents the corridor-in-a-box rate surface: the
-sources, the cadence, and the licences. (Written for
-[corridor-in-a-box#601](https://github.com/corridor-in-a-box/corridor-in-a-box/issues/601);
-adapted to the corridor codebase — see "Source-name map" below.)
+Where the corridor engine records and summarizes the prices it uses. This
+page documents the rate history that RFC 0004 §3
+([docs/rfcs/0004-smart-router.md](docs/rfcs/0004-smart-router.md))
+specifies: four rate sources, a 15-minute collection cadence into
+Postgres, a daily summary, and a retention/minimum-data rule.
 
 ## Sources
 
-### SEP-38 quote server (the corridor's quote source)
+Per RFC 0004 §3, each source is recorded separately (never mixed):
 
-- **Measures:** the exchange rate of the corridor's `fx.path` (e.g.
-  `["USD", "USDC", "USD"]` on `corridors/reference.corridor.yaml`;
-  `["USD", "ZAR"]` on `corridors/zeam.corridor.yaml`).
-- **How fetched:** on demand, by the engine's `quote` verb, via SEP-38
-  `POST /quote` against the destination anchor's quote server — the URL
-  is the corridor manifest's `dest.endpoints.quote_server`
-  (`http://localhost:8080/sep38` on the reference lane,
-  `https://anchor.zeam.money/sep38` on Zeam). Corridor does not collect
-  or store rates: quotes are ephemeral per corridor run.
-- **Firm vs estimated:** `fx.quote_source: sep38` on the firm lanes
-  (`zeam`, `reference-testnet`) requests firm quotes (`sep38_firm`) —
-  they carry a future expiry, expired by the engine at
-  `fx.quote_ttl_seconds` (60 s on the reference lane). Lanes with
-  `quote_source: external` (e.g. `ng-cowrie`) have no SEP-38 source at
-  all. Indicative quotes (`sep38_indicative`) are estimates by
-  definition; corridor's engine surfaces quote failures rather than
-  inventing numbers.
-- **Anchor domain and network:** read from the corridor manifest —
-  `dest.endpoints.home_domain` etc. (`anchor.zeam.money`, the reference
-  server's `localhost:8080`). Corridor trusts the manifest as configured;
-  it does not re-resolve or cache the domain.
+- **SEP-38 indicative** — anchor-published SEP-38 quotes.
+  - Measures: the exchange rate the corridor's `fx.path`
+    (e.g. `["USD", "USDC", "USD"]`) pays, as an _indicative_ (estimated)
+    rate — corridor does not treat indicative quotes as firm.
+  - Fetched from: the corridor's quote server
+    (`dest.endpoints.quote_server` in the corridor manifest) via the
+    SEP-38 `POST /quote` endpoint; anchor domain and network are recorded
+    from the quote response / the anchor's published `stellar.toml` —
+    status: to confirm (corridor records the domain/network per sample —
+    the field to persist them in is not yet defined).
+  - Licence: each anchor's terms — check the anchor's `stellar.toml` and
+    quote API before republishing quote values; the Stellar SEP-38
+    protocol is public and corridor stores no source-licence data.
+- **DEX** — DEX trade rates.
+  - Measures: live DEX-traded rates for the corridor's `fx.path`, when
+    the corridor runs through a DEX path.
+  - Fetched from: to confirm — the DEX data source and queries for this
+    corridor are not yet defined in the codebase.
+- **Reference FX** — rates from an FX reference provider.
+  - Measures: FX quotes for the corridor's `fx.path` where the corridor
+    pays an off-chain payout asset (e.g. `iso4217:USD`) through the bridge
+    leg.
+  - Fetched from: to confirm — the provider and its redistribution
+    licence for corridor use are not yet decided (see Licences below).
+- **Own payment** — the bridge asset's own rate
+  (`settlement.bridge_asset` in the corridor manifest, e.g. USDC on the
+  reference lane).
+  - Measures: the bridge asset's value against the corridor's `fx.path`
+    (used by the ramp leg).
+  - Fetched from: the corridor's config (manifest `settlement` / `fx`
+    fields) — status: to confirm — no live fetch is implemented yet.
 
-### Source-name map to corridor reality
+## Collection
 
-The issue this page was written for lists rate sources — `sep38_price`,
-`dex_trade`, `reference_fx`, `own_payment` — that corridor does not
-collect (there are no `dex_trade`, `reference_fx` or `own_payment` or
-`sep38_price` values anywhere in the repo). Corridor's rate source is the
-anchor quote server above — the closest named corridor source is the
-SEP-38 quote (the manifest `fx.quote_source`, the `sep38_firm` /
-`sep38_indicative` channel quote types in `packages/adapter-kit` and
-[docs/adapters.md](./adapters.md)). Any future rate collection that does
-have `dex_trade` / `reference_fx` / `own_payment`-style sources should
-re-open this page.
-
-## Collection interval
-
-There is no collection cadence — quotes are requested during each
-corridor run (the `quote` verb), subject to the manifest's
-`fx.quote_ttl_seconds`. `packages/engine` has no scheduler and
-`packages/service` runs the engine per request; nothing polls or stores
-rates on a timer.
-
-## Retention
-
-Corridor stores no rate samples and computes no daily summaries, so
-there is no retention policy to document. The records that do persist
-are per corridor: the manifest `id`, `endpoints_verified_at` (when the
-anchor check was recorded, e.g. 2026-10-17 on Zeam) and the `proof:`
-block written by `corridor canary` after a proven settlement.
-
-## Minimum-data rule
-
-Corridor has no "estimated price" path — quotes are either firm or
-absent, and `corridor plan` surfaces the absence (for example:
-"fx.quote_source=sep38 but dest exposes no SEP-38 quote server — quotes
-will fail"). When the corridor requires quotes and the adapter reports
-`quotes: ["none"]`, execution fails with `CAPABILITY_MISMATCH`
-(see CHANGELOG).
+Every 15 minutes (RFC 0004 §3): samples are collected into Postgres (the
+engine's store); the destination table and schema: to confirm.
 
 ## Daily summary
 
-Corridor computes no daily rate summaries. The per-run verb sequence is
-`quote → comply → settle → reconcile → recover` (see
-[README.md](../README.md)); rates exist only as the quotes fetched at the
-start of a run.
+Per RFC 0004 §3, a daily summary per source is the **min, P25, median,
+P75 and max** of the day's samples.
 
-## Licence per source
+## Retention and minimum-data rule
 
-- **SEP-38 quotes (anchor quote servers):** the Stellar SEP-38 protocol
-  is public; quotes come from each anchor's own quote server. Before
-  republishing or redistributing any quote data, check the anchor's
-  terms and its `stellar.toml` — those are the governing terms; corridor
-  itself collects and stores no rate data, so there is no corridor rate
-  licence.
-- **Anchor SEP-38 quotes:** each anchor's terms.
-- **Reference FX / third-party FX providers (if added later):** check the
-  provider's redistribution licence for limits — anything unconfirmed is
-  marked "to confirm", never assumed.
-- **DEX / other data sources:** not present in corridor today.
-
-## To confirm
-
-- Whether anchors permit quote redistribution — check each anchor's
-  `stellar.toml` and the SEP-38 quote API before reusing any quote
-  values.
-- The licence terms for any future external rate sources named
-  `dex_trade`, `reference_fx`, `own_payment` by the original issue.
+Per RFC 0004 §3: data is kept **at least 7 days** and a source-day
+requires **at least 100 samples** — details: to confirm.
 
 ## Links
 
-- [corridors/](../corridors/) — corridor manifests (`fx`,
-  `dest.endpoints`)
-- [docs/adapters.md](./adapters.md) — adapter quote types
-  (`sep38_firm`, `sep38_indicative`)
-- [README.md](../README.md) — the corridor sequencing table (which
-  corridors use SEP-38 quotes and which use `quote_source: external`)
+- RFC 0004 §3 — the rate-history spec (RFC 0004 is not yet present in the repo docs — tracked in corridor issue #601)
+- [README.md](../README.md) — the docs index

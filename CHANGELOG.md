@@ -257,6 +257,12 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once it reache
 - `/sep6/withdraw-exchange` rejects USDC with HTTP 400 and the transaction's `more_info_url`
   is the SEP-24 reference UI, whose business-server calls return 401 for the SEP-6 token.
   No `proof:` block was added, because no payout completed.
+### Added — rate history page (docs/rate-history.md, per RFC 0004 §3)
+
+- New `docs/rate-history.md`: corridor rate history — sources (SEP-38 indicative, DEX, reference FX,
+  own payment), collection every 15 minutes into Postgres, daily summary (min, P25, median, P75, max),
+  retention rule (≥7 days and ≥100 samples); anything not yet decided is marked "to confirm".
+
 
 ### Fixed — stale documentation and comments
 
