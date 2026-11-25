@@ -206,8 +206,9 @@ learn from, so collection starts before the planner ships (D6).
   - a public reference FX rate. The source is still to be chosen and must have
     a licence that allows republishing.
 - **From the business's own completed payments:** the effective rate
-  (`amount_out / amount_in`). This is the only data available for anchors
-  that publish no price.
+  (`amount_out / amount_in`) of the business's own completed payments. This
+  is the only data available for anchors that publish no price. It is not the
+  bridge asset's rate from the manifest.
 - **Storage:** a small Postgres database fed by an always-on collector, not
   the chain. The collector is read-only public data, so running it keeps the
   project non-custodial. GitHub Actions schedules are too unreliable at
@@ -216,6 +217,7 @@ learn from, so collection starts before the planner ships (D6).
   count) as JSON, so anyone can check the numbers the router uses.
 - **Minimum data:** an anchor gets `estimated` only with at least 7 days of
   data and at least 100 samples in the window. Below that it is unpriceable.
+- The rate-history page implements this section: [docs/rate-history.md](../rate-history.md).
 
 ## 4. Reusable onboarding
 

@@ -2,7 +2,7 @@
 
 Where the corridor engine records and summarizes the prices it uses. This
 page documents the rate history that RFC 0004 §3
-([docs/rfcs/0004-smart-router.md](docs/rfcs/0004-smart-router.md))
+([docs/rfcs/0004-smart-router.md](rfcs/0004-smart-router.md#3-rate-history))
 specifies: four rate sources, a 15-minute collection cadence into
 Postgres, a daily summary, and a retention/minimum-data rule.
 
@@ -32,15 +32,15 @@ Per RFC 0004 §3, each source is recorded separately (never mixed):
   - Measures: FX quotes for the corridor's `fx.path` where the corridor
     pays an off-chain payout asset (e.g. `iso4217:USD`) through the bridge
     leg.
-  - Fetched from: to confirm — the provider and its redistribution
-    licence for corridor use are not yet decided (see Licences below).
-- **Own payment** — the bridge asset's own rate
-  (`settlement.bridge_asset` in the corridor manifest, e.g. USDC on the
-  reference lane).
-  - Measures: the bridge asset's value against the corridor's `fx.path`
-    (used by the ramp leg).
-  - Fetched from: the corridor's config (manifest `settlement` / `fx`
-    fields) — status: to confirm — no live fetch is implemented yet.
+  - Fetched from: the provider of the reference FX rates; the provider's
+    licence must allow republishing, and corridor stores no source-licence
+    data.
+- **Own payment** — the business's own completed payments.
+  - Measures: the effective rate (`amount_out / amount_in`) of the
+    business's own completed payments — the only data for anchors that
+    publish no price. It is not the bridge asset's rate from the manifest.
+  - Fetched from: corridor records the completed payments; status: to confirm —
+    no live fetch is implemented yet.
 
 ## Collection
 
@@ -49,15 +49,17 @@ engine's store); the destination table and schema: to confirm.
 
 ## Daily summary
 
-Per RFC 0004 §3, a daily summary per source is the **min, P25, median,
-P75 and max** of the day's samples.
+Per RFC 0004 §3, a daily summary per pair is the **min, P25, median, P75,
+max and sample count**, published as JSON so anyone can check the numbers
+the router uses. The collector that gathers the samples is an always-on,
+read-only service, not GitHub Actions.
 
 ## Retention and minimum-data rule
 
-Per RFC 0004 §3: data is kept **at least 7 days** and a source-day
-requires **at least 100 samples** — details: to confirm.
+An anchor gets estimated only with at least 7 days of data and at least 100
+samples in the window; below that it is unpriceable. Retention is not decided,
+so mark it "to confirm".
 
 ## Links
 
-- RFC 0004 §3 — the rate-history spec (RFC 0004 is not yet present in the repo docs — tracked in corridor issue #601)
 - [README.md](../README.md) — the docs index
